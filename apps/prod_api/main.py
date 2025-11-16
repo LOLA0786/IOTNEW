@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apps.prod_api.routers import techdebt
+from apps.prod_api.routers.ioa import router as ioa_router
 
 app = FastAPI(title="PrivateVault Production API", version="1.0")
 
-# ✅ CORS setup so it works with frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,7 +17,8 @@ app.add_middleware(
 def root():
     return {"status": "✅ PrivateVault Production API Live"}
 
-# ✅ Include routers (TechDebt etc.)
+# Existing TechDebt router
 app.include_router(techdebt.router, prefix="/techdebt", tags=["Tech Debt"])
 
-
+# IOA router
+app.include_router(ioa_router, tags=["IOA"])
