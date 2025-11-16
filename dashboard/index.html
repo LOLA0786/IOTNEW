@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>IOA Dashboard</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px}
+    .log{white-space:pre-wrap;background:#111;color:#0f0;padding:10px;border-radius:6px;height:300px;overflow:auto}
+  </style>
+</head>
+<body>
+  <h2>IOA Dashboard</h2>
+  <div>
+    <input id="symbols" value="AAPL,NVDA,MSFT" style="width:400px" />
+    <button id="run">Run Multi</button>
+  </div>
+  <h3>Live Stream</h3>
+  <div id="stream" class="log">Connecting...</div>
+
+  <script>
+    document.getElementById('run').onclick = async () => {
+      const symbols = document.getElementById('symbols').value.split(',').map(s=>s.trim());
+      const res = await fetch('/run-multi', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({symbols, session_id: 'dash-'+Date.now()})
+      });
+      const data = await res.json();
+      console.log('run-multi', data);
+      alert('Run complete: ' + data.count);
+    };
+
+    const evtSource = new EventSource('/stream');
+    const el = document.getElementById('stream');
+    evtSource.onmessage = function(e) {
+      const txt = e.data;
+      el.textContent = txt + "\\n" + el.textContent;
+    };
+    evtSource.onerror = function(e) {
+      el.textContent = 'Stream error... reconnecting' + "\\n" + el.textContent;
+    };
+  </script>
+</body>
+</html>
