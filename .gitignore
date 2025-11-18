@@ -6,3 +6,5 @@ ioa_full.db
 /tmp/
 ioa_logs.txt
 ioa_saved.jsonl
+next-dashboard/node_modules/
+node_modules/
