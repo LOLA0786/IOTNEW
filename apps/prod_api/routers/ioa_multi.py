@@ -1,76 +1,79 @@
-from fastapi import APIRouter, HTTPException
+import json
+import yfinance as yf
+from fastapi import APIRouter
 from pydantic import BaseModel
-import json, yfinance as yf
-from apps.prod_api.routers.ioa import grok_score, openai_score, fetch_price
-from apps.prod_api.publisher import publish_event
+from typing import List
+from apps.prod_api.grok_client import call_grok_prompt
 
-router = APIRouter(prefix="/run-multi", tags=["IOA Multi"])
-
-class MultiReq(BaseModel):
-    symbols: list[str]
-    session_id: str | None = None
+router = APIRouter()
 
 
-@router.post("/")
-async def run_multi(req: MultiReq):
+class MultiRunRequest(BaseModel):
+    symbols: List[str]
+
+
+@router.post("/run")
+def run_multi(req: MultiRunRequest):
     results = []
 
     for sym in req.symbols:
-        price = fetch_price(sym)
-        if price is None:
-            results.append({
-                "symbol": sym,
-                "error": "no_price"
-            })
+        symbol = sym.upper()
+
+        # 1. Fetch price
+        data = yf.Ticker(symbol).history(period="1d", interval="1m")
+        if data.empty:
+            results.append(
+                {"symbol": symbol, "status": "error", "message": "No market data found"}
+            )
             continue
 
-        # --- GROK FIRST ---
-        g = grok_score(sym, price)
+        price = float(data["Close"].iloc[-1])
 
-        # --- FALLBACK ---
-        final = g
-        if final.get("sentiment") == "error" or final.get("score", 0) <= 0:
-            final = openai_score(sym, price)
+        # 2. Grok JSON scoring
+        prompt = f"""
+        Evaluate {symbol} at price {price}.
+        Return JSON only:
+        {{
+          "sentiment": "...",
+          "reason": "...",
+          "score": 0-100
+        }}
+        """
 
-        score = float(final.get("score", 0))
-        boosted = score * 1.5
+        grok = call_grok_prompt(prompt)
 
-        decision = "ignored"
-        saved = False
+        if not grok["ok"]:
+            results.append(
+                {
+                    "symbol": symbol,
+                    "price": price,
+                    "status": "error",
+                    "message": grok["error"],
+                }
+            )
+            continue
 
-        record = {
-            "symbol": sym,
-            "price": price,
-            "sentiment": final.get("sentiment"),
-            "reason": final.get("reason"),
-            "score": score,
-            "boosted": boosted
-        }
-
-        if boosted >= 78:
-            decision = "saved"
-            saved = True
-            with open("/tmp/ioa_saved.jsonl", "a") as f:
-                f.write(json.dumps({**record, "decision": decision}) + "\n")
-
-        # Log
-        with open("/tmp/ioa_logs.txt", "a") as f:
-            f.write(json.dumps({**record, "decision": decision}) + "\n")
-
-        # Push to WebSocket
         try:
-            await publish_event({**record, "decision": decision})
-        except Exception:
-            pass
+            parsed = json.loads(grok["text"])
+        except:
+            parsed = {"sentiment": "neutral", "reason": "parse_error", "score": 50}
 
-        results.append({
-            **record,
-            "decision": decision,
-            "saved": saved
-        })
+        score = float(parsed.get("score", 0))
+        boosted = score * 1.5
+        saved = boosted >= 78
 
-    return {
-        "status": "ok",
-        "count": len(results),
-        "results": results
-    }
+        results.append(
+            {
+                "symbol": symbol,
+                "status": "ok",
+                "price": price,
+                "sentiment": parsed.get("sentiment"),
+                "reason": parsed.get("reason"),
+                "score": score,
+                "boosted_score": boosted,
+                "decision": "saved" if saved else "ignored",
+                "saved": saved,
+            }
+        )
+
+    return {"status": "ok", "count": len(results), "results": results}
