@@ -46,3 +46,12 @@ typing_extensions==4.15.0
 urllib3==2.5.0
 uvicorn==0.38.0
 zipp==3.23.0
+yfinance==0.2.40
+pandas==2.2.2
+numpy==1.26.4
+yfinance==0.2.66
+pandas==2.2.2
+numpy==1.26.4
+yfinance==0.2.66
+pandas==2.2.2
+numpy==1.26.4
